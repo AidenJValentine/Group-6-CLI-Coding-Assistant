@@ -26,12 +26,27 @@ Connect to multiple MCP servers, dynamically load tools, and expose a unified in
 - one external resource MCP server
 - custom RAG MCP server
 
-## Approval controller requirements
-Support two modes:
-- `confirm`: ask user before execution
-- `auto`: execute immediately
+## Tool classification
 
-For confirm mode, return an approval request object to the CLI before execution.
+Tools are classified into two classes. This dict lives in `approval.py`:
+
+```python
+TOOL_CLASSES = {
+    "read":  ["read_file", "list_directory", "search_docs", "web_search"],
+    "write": ["write_file", "edit_file", "run_command", "delete_file"],
+}
+```
+
+## Mode-aware confirmation rules
+
+| Tool class | debug mode | build mode |
+|---|---|---|
+| `read` | auto-execute (no prompt) | auto-execute (no prompt) |
+| `write` | prompt before **every** call | prompt once per tool type per batch; auto-approve remaining calls of that same type in the batch |
+
+The old binary `confirm` / `auto` execution mode is replaced by this 3-way rule (tool class × agent mode). The approval controller receives the current `execution_mode` from `AgentState` to apply the correct rule.
+
+For write-class tools in confirm scenarios, return an approval request object to the CLI before execution.
 
 ## Recommended normalized tool metadata
 - `name`

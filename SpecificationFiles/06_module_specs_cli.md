@@ -25,8 +25,25 @@ Implement a terminal REPL that accepts user tasks, streams assistant output, sho
 
 ## Suggested interface
 ```bash
-python -m assistant.main --provider ollama --model llama3 --mode confirm
+python -m assistant.main --agent-model anthropic/claude-opus-4-6 --executor-model ollama/llama3 --mode debug
 ```
+
+`--mode` accepts `debug` (default) or `build`.
+
+## Slash command handling
+
+The CLI detects lines beginning with `/` and dispatches them to the `input_handler` node before passing to the agent loop.
+
+| Command | Effect |
+|---|---|
+| `/mode debug` | Set `execution_mode = "debug"` in AgentState; confirm switch to user |
+| `/mode build` | Set `execution_mode = "build"` in AgentState; confirm switch to user |
+| `/help` | Print available slash commands |
+| `/exit` | Quit the REPL |
+
+- Default mode on startup: `debug`
+- Mode persists in `AgentState` across turns until explicitly changed via `/mode`
+- The CLI renders a confirmation message after any mode switch (e.g. `Switched to build mode`)
 
 ## Input/output contract
 
