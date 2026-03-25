@@ -102,7 +102,8 @@ Responsibilities:
 ### Libraries
 - Typer or Click for CLI
 - Rich for styled terminal output and streaming display
-- LangChain optional for provider abstraction, but not required
+- **LangGraph** for agent loop state machine (required)
+- **LiteLLM** for provider abstraction (required — replaces hand-rolled provider classes)
 - official MCP Python SDK
 - ChromaDB for vector storage
 - sentence-transformers for embeddings

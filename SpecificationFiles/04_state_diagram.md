@@ -1,48 +1,50 @@
 # State Diagram
 
-Use this Mermaid state diagram directly in markdown-capable viewers or convert it to an image for the repo/demo.
+This diagram reflects the LangGraph node topology. Use it in markdown-capable viewers or convert to an image for the repo/demo.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Idle
+flowchart TD
+    A([User Input]) --> B[input_handler]
+    B -->|slash command| C[handle_slash_command]
+    B -->|task| D[mode_classifier]
+    C --> Z([Idle — await next input])
 
-    Idle --> AcceptingTask : user enters prompt
-    AcceptingTask --> BuildingContext : task accepted
+    D -->|execution_mode = debug| E["agent_node\nuses agent_model"]
+    D -->|execution_mode = build| F["planner_node\nuses agent_model"]
 
-    BuildingContext --> QueryingModel : prompt assembled
+    E -->|tool call| G{tool class?}
+    G -->|read class| I[tool_executor]
+    G -->|write class| H[await user approval]
+    H -->|approved| I
+    H -->|denied| E
+    I --> E
+    E -->|done or max_iterations hit| R[responder]
 
-    QueryingModel --> DisplayingText : model streams text
-    DisplayingText --> QueryingModel : continue stream
+    F --> J["Send() fan-out\nparallel_executor\nuses executor_model"]
+    J --> K[synthesizer]
+    K --> R
 
-    QueryingModel --> ToolDecision : model requests tool
-    QueryingModel --> Completed : model returns final answer
-    QueryingModel --> Failed : provider error
-
-    ToolDecision --> AwaitingApproval : confirmation mode enabled
-    ToolDecision --> ExecutingTool : auto-execute mode enabled
-
-    AwaitingApproval --> ExecutingTool : user approves
-    AwaitingApproval --> QueryingModel : user denies / denial observation added
-
-    ExecutingTool --> ObservingResult : tool returns result
-    ExecutingTool --> Failed : execution error
-
-    ObservingResult --> BuildingContext : append tool result to conversation
-
-    Completed --> Idle : next user task
-    Failed --> Idle : recover / next user task
+    R --> Z
 ```
 
-## State explanations
+## Node explanations
 
-- **Idle**: system waiting for input
-- **AcceptingTask**: task capture and initial validation
-- **BuildingContext**: prepare system prompt, tool list, conversation state
-- **QueryingModel**: ask model for next action
-- **DisplayingText**: show streamed assistant tokens
-- **ToolDecision**: model has selected a tool call
-- **AwaitingApproval**: optional user confirmation step
-- **ExecutingTool**: MCP tool or shell-like action is running
-- **ObservingResult**: output is normalized and appended to state
-- **Completed**: task finished
-- **Failed**: unrecoverable error or max-iteration stop
+| Node | Role |
+|---|---|
+| `input_handler` | Entry point. Detects `/` slash commands and routes them out early; otherwise passes to `mode_classifier` |
+| `handle_slash_command` | Handles `/mode debug`, `/mode build`, `/help`, `/exit`; confirms switch to user |
+| `mode_classifier` | Reads `AgentState.execution_mode`; routes to debug or build subgraph |
+| `agent_node` | ReAct agent step (debug mode). Calls LLM, decides tool call or final answer |
+| `tool_executor` | Runs the MCP tool requested by `agent_node`; appends result to state |
+| `await user approval` | Write-class tool in debug mode: blocks until user approves or denies |
+| `planner_node` | Build mode entry. Calls `planner.py` to produce `state["plan"]` |
+| `parallel_executor` | Executes one plan step (invoked N times via `Send()` fan-out) |
+| `synthesizer` | Collects all `parallel_executor` results; assembles final context |
+| `responder` | Shared exit node. Streams final answer to CLI; saves to history |
+
+## Confirmation rules (tool_executor path)
+
+| Tool class | debug mode | build mode |
+|---|---|---|
+| read | auto-execute | auto-execute |
+| write | prompt every call | prompt once per type per batch |
