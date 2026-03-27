@@ -68,7 +68,7 @@ MOCK_TOOLS = [
 
 
 # ---------------------------------------------------------------------------
-# Node stubs — topology only, no logic yet
+# Nodes
 # ---------------------------------------------------------------------------
 
 def input_handler(state: AgentState) -> AgentState:
@@ -91,6 +91,7 @@ def handle_slash_command(state: AgentState) -> AgentState:
         reply = "Available commands: /mode debug, /mode build, /help, /exit"
     elif content == "/exit":
         reply = "Goodbye."
+        update["exit_requested"] = True
     else:
         reply = "Unknown command. Try /help."
 
@@ -131,9 +132,10 @@ def agent_node(state: AgentState) -> AgentState:
 
 def tool_executor(state: AgentState) -> AgentState:
     """Execute the tool requested in the last message and append the result."""
+    import json
+
     tool_call = state["messages"][-1]["tool_calls"][0]
     name = tool_call["function"]["name"]
-    import json
     raw_args = tool_call["function"]["arguments"]
     args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
     tool_call_id = tool_call.get("id", name)
@@ -149,7 +151,7 @@ def tool_executor(state: AgentState) -> AgentState:
             messages = list(state["messages"]) + [
                 {"role": "tool", "content": "User denied tool execution.", "tool_call_id": tool_call_id}
             ]
-            return {**state, "messages": messages}
+            return {"messages": messages}
 
     result = asyncio.run(MockMCPClient().call_tool(name, args))
 
@@ -245,7 +247,6 @@ def fan_out_plan(state: AgentState) -> list[Send]:
 def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
 
-    # Nodes
     graph.add_node("input_handler", input_handler)
     graph.add_node("handle_slash_command", handle_slash_command)
     graph.add_node("mode_classifier", mode_classifier)
@@ -256,10 +257,8 @@ def build_graph() -> StateGraph:
     graph.add_node("synthesizer", synthesizer)
     graph.add_node("responder", responder)
 
-    # Entry point
     graph.set_entry_point("input_handler")
 
-    # input_handler → slash command path or task path
     graph.add_conditional_edges(
         "input_handler",
         route_input,
@@ -267,14 +266,12 @@ def build_graph() -> StateGraph:
     )
     graph.add_edge("handle_slash_command", END)
 
-    # mode_classifier → debug or build subgraph
     graph.add_conditional_edges(
         "mode_classifier",
         route_mode,
         {"debug": "agent_node", "build": "planner_node"},
     )
 
-    # Debug subgraph: ReAct loop
     graph.add_conditional_edges(
         "agent_node",
         route_agent,
@@ -282,12 +279,10 @@ def build_graph() -> StateGraph:
     )
     graph.add_edge("tool_executor", "agent_node")
 
-    # Build subgraph: plan → fan-out → synthesize
     graph.add_conditional_edges("planner_node", fan_out_plan)
     graph.add_edge("parallel_executor", "synthesizer")
     graph.add_edge("synthesizer", "responder")
 
-    # Shared exit
     graph.add_edge("responder", END)
 
     return graph

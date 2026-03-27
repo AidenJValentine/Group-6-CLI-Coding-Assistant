@@ -5,9 +5,11 @@ from assistant.tools.registry import TOOL_REGISTRY
 
 def invoke_tool(name: str, args: dict) -> str:
     """Invoke a registered tool and return a placeholder result."""
-    # Later, this function can route calls to local Python tools or MCP tools.
-    # The registry lookup stays simple now so the interface is easy to extend.
-    _tool = TOOL_REGISTRY.get(name)
-    _args = args
+    tool = TOOL_REGISTRY.get(name)
+    if tool is None:
+        return f"Tool '{name}' is not registered."
 
-    return "stub tool result"
+    return (
+        f"Mocked execution of {name}: "
+        f"{tool['description']} | args={args}"
+    )

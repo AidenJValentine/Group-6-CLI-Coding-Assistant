@@ -7,6 +7,7 @@ Priority order for each key:
 """
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 _DEFAULT_MODEL = "ollama/llama3.2"
@@ -50,9 +51,6 @@ def load_provider_config() -> dict:
 # ---------------------------------------------------------------------------
 # RuntimeConfig — CLI startup settings (from CLI-Interface branch)
 # ---------------------------------------------------------------------------
-
-from dataclasses import dataclass
-
 
 @dataclass(slots=True)
 class RuntimeConfig:
