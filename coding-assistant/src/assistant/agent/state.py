@@ -1,30 +1,28 @@
 """AgentState definition for the LangGraph-based assistant loop."""
 
-from typing import TypedDict
+from collections.abc import Callable
+from typing import Any, TypedDict
 
 
-class AgentState(TypedDict):
-    # Core task context
+class AgentState(TypedDict, total=False):
+    """Shared LangGraph state for the Milestone 2 assistant flow."""
+
     original_task: str
-    messages: list[dict]          # Full conversation history (role/content dicts)
-
-    # Iteration control
+    messages: list[dict]
     iteration_count: int
     max_iterations: int
-
-    # Mode — "debug" (ReAct) or "build" (plan-and-execute)
     execution_mode: str
-
-    # Tool tracking
-    tool_history: list[dict]      # Record of every tool call and its result
-
-    # Build-mode plan
-    # Each entry: {"id": str, "step": str, "depends_on": list[str]}
-    # MVP: depends_on is always [] (all steps treated as independent).
-    # Post-MVP: planner emits real dependency edges; executor and synthesizer
-    # respect ordering.
+    tool_history: list[dict]
     plan: list[dict]
-
-    # Output
     final_answer: str
-    status: str                   # "running" | "completed" | "failed" | "cancelled"
+    status: str
+    approval_mode: str
+    pending_tool_call: dict | None
+    latest_events: list[dict]
+    step_results: list[dict]
+    current_step: dict
+    slash_command: str
+    help_text: str
+    exit_requested: bool
+    provider: Any
+    approval_handler: Callable[[dict], bool]
