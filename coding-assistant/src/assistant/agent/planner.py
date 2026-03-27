@@ -3,7 +3,7 @@
 import json
 import re
 
-from assistant.config import load_config
+from assistant.config import load_provider_config
 from assistant.providers.litellm_client import call_llm
 
 PLANNER_PROMPT = """You are a planning assistant. Break the following task into independent steps that can be executed in parallel.
@@ -23,7 +23,7 @@ Task: {task}"""
 
 
 def make_plan(task: str) -> list[dict]:
-    config = load_config()
+    config = load_provider_config()
     result = call_llm(
         config["agent_model"],
         [{"role": "user", "content": PLANNER_PROMPT.format(task=task)}],

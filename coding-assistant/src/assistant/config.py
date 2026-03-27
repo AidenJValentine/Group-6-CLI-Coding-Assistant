@@ -25,7 +25,7 @@ def _load_yaml(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def load_config() -> dict:
+def load_provider_config() -> dict:
     """Return config dict with at least agent_model and executor_model."""
     file_cfg: dict = {}
     for candidate in _CONFIG_SEARCH_PATHS:
@@ -45,3 +45,22 @@ def load_config() -> dict:
     )
 
     return {"agent_model": agent_model, "executor_model": executor_model}
+
+
+# ---------------------------------------------------------------------------
+# RuntimeConfig — CLI startup settings (from CLI-Interface branch)
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass
+
+
+@dataclass(slots=True)
+class RuntimeConfig:
+    """Runtime settings passed from CLI flags to the agent loop."""
+
+    provider: str = "mock"
+    agent_model: str = "mock-agent"
+    executor_model: str = "mock-executor"
+    execution_mode: str = "debug"
+    approval_mode: str = "confirm"
+    max_iterations: int = 10

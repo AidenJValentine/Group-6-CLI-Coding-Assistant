@@ -23,7 +23,7 @@ from langgraph.types import Send
 from assistant.agent.state import AgentState
 from assistant.agent.planner import make_plan
 from assistant.providers.litellm_client import call_llm
-from assistant.config import load_config
+from assistant.config import load_provider_config, RuntimeConfig
 from assistant.mcp.mock_client import MockMCPClient
 
 
@@ -108,7 +108,7 @@ def mode_classifier(state: AgentState) -> AgentState:
 
 def agent_node(state: AgentState) -> AgentState:
     """Call the LLM (agent_model) and append the response to messages."""
-    agent_model = load_config()["agent_model"]
+    agent_model = load_provider_config()["agent_model"]
     result = call_llm(agent_model, state["messages"], tools=MOCK_TOOLS)
 
     messages = list(state["messages"]) + [
@@ -295,3 +295,54 @@ def build_graph() -> StateGraph:
 
 # Compiled graph — import this in the CLI
 agent_graph = build_graph().compile()
+
+
+# ---------------------------------------------------------------------------
+# LangGraph-free fallback (from CLI-Interface branch)
+# Mirrors the graph control flow without the LangGraph dependency.
+# Uses state["messages"][-1]["content"] for slash detection (abhi convention).
+# ---------------------------------------------------------------------------
+
+def _invoke_without_langgraph(initial_state: AgentState) -> AgentState:
+    """Run the same control flow without the LangGraph dependency."""
+    state = input_handler(initial_state)
+
+    if route_input(state) == "slash":
+        return handle_slash_command(state)
+
+    state = mode_classifier(state)
+    if route_mode(state) == "debug":
+        while True:
+            state = agent_node(state)
+            if route_agent(state) == "done":
+                return responder(state)
+            state = tool_executor(state)
+
+    state = planner_node(state)
+    sends = fan_out_plan(state)
+    if not sends:
+        return responder(synthesizer(state))
+    step_state = parallel_executor(sends[0].arg)
+    return responder(synthesizer(step_state))
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+def run_agent(task: str, config: RuntimeConfig) -> AgentState:
+    """Run one user task through the compiled graph.
+
+    Builds a fresh AgentState from make_initial_state(), applies runtime
+    config, appends the task as the first user message, then invokes the
+    compiled LangGraph.
+    """
+    from assistant.agent.state import make_initial_state
+
+    state = make_initial_state(
+        execution_mode=config.execution_mode,
+        max_iterations=config.max_iterations,
+    )
+    state["approval_mode"] = config.approval_mode
+    state["messages"].append({"role": "user", "content": task})
+    return agent_graph.invoke(state)

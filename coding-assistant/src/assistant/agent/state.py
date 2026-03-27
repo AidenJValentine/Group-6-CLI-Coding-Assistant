@@ -1,7 +1,7 @@
 """AgentState definition and initialization helpers for the LangGraph agent loop."""
 
 import operator
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
 
 class AgentState(TypedDict):
@@ -33,6 +33,14 @@ class AgentState(TypedDict):
     final_answer: str
     status: str                   # "running" | "completed" | "failed" | "cancelled"
 
+    # CLI / approval fields (from CLI-Interface)
+    approval_mode: str            # "confirm" | "auto"
+    pending_tool_call: dict       # tool call awaiting execution; {} when none
+    latest_events: list[dict]     # tool events from the most recent turn
+    slash_command: str            # raw slash command string if input started with /
+    exit_requested: bool          # set True by /exit to signal REPL shutdown
+    approval_handler: Any         # callable(tool_call: dict) -> bool; None in headless mode
+
 
 def make_initial_state(
     execution_mode: str = "debug",
@@ -50,4 +58,10 @@ def make_initial_state(
         plan=[],
         final_answer="",
         status="running",
+        approval_mode="confirm",
+        pending_tool_call={},
+        latest_events=[],
+        slash_command="",
+        exit_requested=False,
+        approval_handler=None,
     )
