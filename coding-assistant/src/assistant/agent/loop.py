@@ -15,10 +15,56 @@ Graph topology:
     responder ──► END
 """
 
+import asyncio
+
 from langgraph.graph import StateGraph, END
 from langgraph.types import Send
 
 from assistant.agent.state import AgentState
+from assistant.agent.planner import make_plan
+from assistant.providers.litellm_client import call_llm
+from assistant.config import load_config
+from assistant.mcp.mock_client import MockMCPClient
+
+
+# ---------------------------------------------------------------------------
+# Tool classification and mock tool schema
+# ---------------------------------------------------------------------------
+
+TOOL_CLASSES = {
+    "read":  ["read_file", "list_directory", "search_docs", "web_search"],
+    "write": ["write_file", "edit_file", "run_command", "delete_file"],
+}
+
+MOCK_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a file",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write a file",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -26,54 +72,136 @@ from assistant.agent.state import AgentState
 # ---------------------------------------------------------------------------
 
 def input_handler(state: AgentState) -> AgentState:
-    """Route slash commands out early; pass regular tasks to mode_classifier."""
-    raise NotImplementedError
+    """Passthrough — routing is handled by the route_input conditional edge."""
+    return state
 
 
 def handle_slash_command(state: AgentState) -> AgentState:
-    """Process a slash command (e.g. /mode debug) and return to idle."""
-    raise NotImplementedError
+    """Process a slash command and return updated state."""
+    content = state["messages"][-1]["content"].strip()
+    update: dict = {}
+
+    if content == "/mode debug":
+        reply = "Mode switched to debug."
+        update["execution_mode"] = "debug"
+    elif content == "/mode build":
+        reply = "Mode switched to build."
+        update["execution_mode"] = "build"
+    elif content == "/help":
+        reply = "Available commands: /mode debug, /mode build, /help, /exit"
+    elif content == "/exit":
+        reply = "Goodbye."
+    else:
+        reply = "Unknown command. Try /help."
+
+    update["messages"] = list(state["messages"]) + [{"role": "system", "content": reply}]
+    update["status"] = "completed"
+    return update
 
 
 def mode_classifier(state: AgentState) -> AgentState:
-    """Read execution_mode and route to the appropriate subgraph."""
-    raise NotImplementedError
+    """Passthrough — routing is handled by the route_mode conditional edge."""
+    return state
 
 
 # --- Debug subgraph (ReAct) -------------------------------------------------
 
 def agent_node(state: AgentState) -> AgentState:
-    """Call the LLM (agent_model) and decide: tool call or final answer."""
-    raise NotImplementedError
+    """Call the LLM (agent_model) and append the response to messages."""
+    agent_model = load_config()["agent_model"]
+    result = call_llm(agent_model, state["messages"], tools=MOCK_TOOLS)
+
+    messages = list(state["messages"]) + [
+        {
+            "role": "assistant",
+            "content": result["text"],
+            "tool_calls": result["tool_calls"],
+        }
+    ]
+    iteration_count = state["iteration_count"] + 1
+
+    update: dict = {"messages": messages, "iteration_count": iteration_count}
+
+    if iteration_count >= state["max_iterations"]:
+        update["status"] = "failed"
+        update["final_answer"] = "Max iterations reached. Stopping."
+
+    return update
 
 
 def tool_executor(state: AgentState) -> AgentState:
     """Execute the tool requested in the last message and append the result."""
-    raise NotImplementedError
+    tool_call = state["messages"][-1]["tool_calls"][0]
+    name = tool_call["function"]["name"]
+    import json
+    raw_args = tool_call["function"]["arguments"]
+    args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+    tool_call_id = tool_call.get("id", name)
+
+    # Write-class tools in debug mode require confirmation
+    is_write = name in TOOL_CLASSES["write"]
+    needs_confirm = is_write and state["execution_mode"] == "debug"
+
+    if needs_confirm:
+        print(f"Tool: {name} | Args: {args} | Approve? (y/n): ", end="", flush=True)
+        answer = input().strip().lower()
+        if answer != "y":
+            messages = list(state["messages"]) + [
+                {"role": "tool", "content": "User denied tool execution.", "tool_call_id": tool_call_id}
+            ]
+            return {**state, "messages": messages}
+
+    result = asyncio.run(MockMCPClient().call_tool(name, args))
+
+    messages = list(state["messages"]) + [
+        {"role": "tool", "content": result, "tool_call_id": tool_call_id}
+    ]
+    return {"messages": messages, "tool_history": [{"tool": name, "args": args, "result": result}]}
 
 
 # --- Build subgraph (plan-and-execute) --------------------------------------
 
 def planner_node(state: AgentState) -> AgentState:
     """Call planner.py to produce state['plan'] (list of step dicts)."""
-    raise NotImplementedError
+    task = state["messages"][-1]["content"]
+    plan = make_plan(task)
+    return {"plan": plan}
 
 
 def parallel_executor(state: AgentState) -> AgentState:
     """Execute a single plan step. Invoked once per Send() fan-out."""
-    raise NotImplementedError
+    step = state["current_step"]
+    print(f"[build] executing: {step['step']}")
+    result = asyncio.run(MockMCPClient().call_tool("read_file", {"path": "mock"}))
+    # Return delta only — operator.add reducer accumulates across parallel invocations
+    return {"tool_history": [{"step_id": step["id"], "step": step["step"], "result": result}]}
 
 
 def synthesizer(state: AgentState) -> AgentState:
-    """Collect parallel_executor results and build the final context."""
-    raise NotImplementedError
+    """Collect all tool_history entries and build the final answer."""
+    lines = [
+        f"- [{entry['step_id']}] {entry['step']}: {entry['result']}"
+        for entry in state["tool_history"]
+    ]
+    final_answer = "Build results:\n" + "\n".join(lines)
+    return {"final_answer": final_answer}
 
 
 # --- Shared exit node -------------------------------------------------------
 
 def responder(state: AgentState) -> AgentState:
-    """Stream final output to CLI and save to history."""
-    raise NotImplementedError
+    """Set final_answer from last assistant message and print to stdout."""
+    final_answer = state["final_answer"]
+
+    if not final_answer:
+        assistant_messages = [
+            m for m in state["messages"] if m.get("role") == "assistant"
+        ]
+        if assistant_messages:
+            final_answer = assistant_messages[-1].get("content") or ""
+
+    print(final_answer)
+    return {"final_answer": final_answer, "status": "completed"}
 
 
 # ---------------------------------------------------------------------------
@@ -81,23 +209,33 @@ def responder(state: AgentState) -> AgentState:
 # ---------------------------------------------------------------------------
 
 def route_input(state: AgentState) -> str:
-    """Return 'slash' if input starts with '/', else 'task'."""
-    raise NotImplementedError
+    """Return 'slash' if the last message content starts with '/', else 'task'."""
+    content = state["messages"][-1]["content"]
+    return "slash" if content.startswith("/") else "task"
 
 
 def route_mode(state: AgentState) -> str:
     """Return 'debug' or 'build' based on state['execution_mode']."""
-    raise NotImplementedError
+    mode = state["execution_mode"]
+    if mode not in ("debug", "build"):
+        raise ValueError(f"Invalid execution_mode: {mode!r}. Must be 'debug' or 'build'.")
+    return mode
 
 
 def route_agent(state: AgentState) -> str:
-    """Return 'tool' if last message has a tool_call, else 'done'."""
-    raise NotImplementedError
+    """Return 'tool' if the last message has a non-empty tool_calls list, else 'done'."""
+    last = state["messages"][-1]
+    if last.get("tool_calls"):
+        return "tool"
+    return "done"
 
 
 def fan_out_plan(state: AgentState) -> list[Send]:
-    """Return a Send() for each step in state['plan'] (all independent in MVP)."""
-    raise NotImplementedError
+    """Return a Send() for each plan step. MVP: all steps are independent."""
+    return [
+        Send("parallel_executor", {**state, "current_step": step})
+        for step in state["plan"]
+    ]
 
 
 # ---------------------------------------------------------------------------
