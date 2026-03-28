@@ -30,7 +30,7 @@ class MCPClient:
             raise ValueError(f"Unknown MCP server: {server_name}")
 
         try:
-            from mcp.client import ClientSession
+            from mcp.client.session import ClientSession
             from mcp.client.stdio import stdio_client
         except ImportError as exc:
             raise RuntimeError(

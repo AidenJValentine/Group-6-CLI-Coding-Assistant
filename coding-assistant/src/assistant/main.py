@@ -9,6 +9,13 @@ SRC_DIR = Path(__file__).resolve().parents[1]
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+# Python auto-adds the script directory (src/assistant/) to sys.path[0] when
+# running "python src/assistant/main.py". This makes src/assistant/mcp/ shadow
+# the real 'mcp' SDK package. Remove it now that we've inserted src/ above.
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+while _SCRIPT_DIR in sys.path:
+    sys.path.remove(_SCRIPT_DIR)
+
 # Ensure UTF-8 output on Windows terminals that default to cp1252
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
