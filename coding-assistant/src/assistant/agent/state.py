@@ -34,6 +34,10 @@ class AgentState(TypedDict):
     status: str                   # "running" | "completed" | "failed" | "cancelled"
     _pending_final: str           # final answer text from agent_node before responder commits it
 
+    # Model selection — set from RuntimeConfig so nodes don't call load_provider_config()
+    agent_model: str
+    executor_model: str
+
     # CLI / approval fields (from CLI-Interface)
     approval_mode: str            # "confirm" | "auto"
     pending_tool_call: dict       # tool call awaiting execution; {} when none
@@ -59,6 +63,8 @@ def make_initial_state(
         plan=[],
         final_answer="",
         status="running",
+        agent_model="mock-agent",
+        executor_model="mock-executor",
         approval_mode="confirm",
         pending_tool_call={},
         latest_events=[],

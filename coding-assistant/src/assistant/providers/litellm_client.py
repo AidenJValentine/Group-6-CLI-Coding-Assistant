@@ -50,9 +50,14 @@ def call_llm(
         for tc in raw_tool_calls
     ]
 
+    # model_dump() produces the exact dict format LiteLLM/OpenAI expect when
+    # the message is replayed in subsequent turns (tool_calls, content, role).
+    message_dict = message.model_dump()
+
     return {
         "text": text,
         "tool_calls": tool_calls,
         "finish_reason": finish_reason,
         "raw": response,
+        "message_dict": message_dict,
     }

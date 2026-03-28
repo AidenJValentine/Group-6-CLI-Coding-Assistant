@@ -38,21 +38,47 @@ load_rag_tool()
 
 TOOL_CLASSES = {
     "read":  ["read_file", "list_directory", "search_docs", "web_search", "tavily_search"],
-    "write": ["write_file", "edit_file", "run_command", "delete_file"],
+    "write": ["write_file", "edit_file", "run_command", "delete_file", "create_directory"],
 }
 
 MOCK_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_docs",
-            "description": "Search the documentation index for relevant information about a library or API",
+            "name": "tavily_search",
+            "description": "Search the web for current information on any topic",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "the search query"},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_docs",
+            "description": "Search the documentation index for relevant information about this project",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "the search query"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_directory",
+            "description": "Create a new directory at the given path. Always call this before write_file when writing to a new subdirectory.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "directory path to create"}},
+                "required": ["path"],
             },
         },
     },
@@ -65,20 +91,6 @@ MOCK_TOOLS = [
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
                 "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "tavily_search",
-            "description": "Search the web for current information on any topic",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "the search query"},
-                },
-                "required": ["query"],
             },
         },
     },
@@ -160,40 +172,20 @@ def agent_node(state: AgentState) -> AgentState:
             "final_answer": "Max iterations reached. Stopping.",
         }
 
-    agent_model = load_provider_config()["agent_model"]
+    agent_model = state.get("agent_model") or load_provider_config()["agent_model"]
     tool_names = ", ".join([t["function"]["name"] for t in MOCK_TOOLS])
 
     system_message = {"role": "system", "content": SYSTEM_PROMPT.format(tool_names=tool_names)}
 
-    # On turn 1 (no prior assistant messages) inject a conversational primer so
-    # the model responds with prose rather than a structured JSON blob.
-    # On turns 2+ the accumulated tool/assistant history already anchors tone —
-    # inserting the primer would produce two consecutive assistant messages, which
-    # is invalid for strict providers like Claude.
-    has_prior_assistant = any(m.get("role") == "assistant" for m in state["messages"])
-    if not has_prior_assistant:
-        first_user = state["messages"][0] if state["messages"] else {"role": "user", "content": ""}
-        rest = state["messages"][1:]
-        messages_with_system = [
-            system_message,
-            first_user,
-            {"role": "assistant", "content": "I'll help with that. Let me search the documentation."},
-        ] + rest
-    else:
-        messages_with_system = [system_message] + state["messages"]
+    messages_with_system = [system_message] + state["messages"]
 
     result = call_llm(agent_model, messages_with_system, tools=MOCK_TOOLS)
     iteration_count = state["iteration_count"] + 1
 
     if result["tool_calls"]:
-        # Tool-call turn: keep in history so tool_executor can read it
-        messages = list(state["messages"]) + [
-            {
-                "role": "assistant",
-                "content": result["text"],
-                "tool_calls": result["tool_calls"],
-            }
-        ]
+        # Tool-call turn: store the raw message_dict so tool_call ids and
+        # format exactly match what the provider expects on the next turn.
+        messages = list(state["messages"]) + [result["message_dict"]]
         update: dict = {"messages": messages, "iteration_count": iteration_count}
     else:
         # Final answer turn: don't append to history — stash in _pending_final
@@ -217,9 +209,13 @@ def tool_executor(state: AgentState) -> AgentState:
     args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
     tool_call_id = tool_call.get("id", name)
 
-    # Write-class tools in debug mode require confirmation
+    # Write-class tools in debug mode require confirmation unless approval_mode="auto"
     is_write = name in TOOL_CLASSES["write"]
-    needs_confirm = is_write and state["execution_mode"] == "debug"
+    needs_confirm = (
+        is_write
+        and state["execution_mode"] == "debug"
+        and state.get("approval_mode") != "auto"
+    )
 
     if needs_confirm:
         print(f"Tool: {name} | Args: {args} | Approve? (y/n): ", end="", flush=True)
@@ -425,5 +421,7 @@ def run_agent(task: str, config: RuntimeConfig) -> AgentState:
         max_iterations=config.max_iterations,
     )
     state["approval_mode"] = config.approval_mode
+    state["agent_model"] = config.agent_model
+    state["executor_model"] = config.executor_model
     state["messages"].append({"role": "user", "content": task})
     return agent_graph.invoke(state)
