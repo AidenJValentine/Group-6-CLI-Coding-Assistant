@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 from assistant.mcp.adapters import normalize_tool_metadata, normalize_tool_result
@@ -15,6 +16,7 @@ class MCPClient:
         self.servers = servers
         self.sessions: dict[str, Any] = {}
         self.tools: dict[str, dict] = {}
+        self._exit_stack = contextlib.AsyncExitStack()
 
     async def connect_all(self) -> None:
         """Connect to every configured MCP server."""
@@ -31,18 +33,25 @@ class MCPClient:
 
         try:
             from mcp.client.session import ClientSession
-            from mcp.client.stdio import stdio_client
+            from mcp.client.stdio import StdioServerParameters, stdio_client
         except ImportError as exc:
             raise RuntimeError(
                 "MCP support requires the optional 'mcp' package to be installed."
             ) from exc
 
         try:
-            transport = await stdio_client(
+            server_params = StdioServerParameters(
                 command=config["command"],
                 args=config.get("args", []),
+                env=None,  # inherit full parent environment (including API keys)
             )
-            session = await ClientSession(transport).__aenter__()
+            read, write = await self._exit_stack.enter_async_context(
+                stdio_client(server_params)
+            )
+            session = await self._exit_stack.enter_async_context(
+                ClientSession(read, write)
+            )
+            await session.initialize()
             discovered = await session.list_tools()
         except Exception as exc:
             raise RuntimeError(f"Failed to connect to MCP server '{server_name}': {exc}") from exc

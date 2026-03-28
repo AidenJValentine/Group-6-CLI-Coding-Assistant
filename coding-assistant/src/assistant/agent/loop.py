@@ -37,7 +37,7 @@ load_rag_tool()
 # ---------------------------------------------------------------------------
 
 TOOL_CLASSES = {
-    "read":  ["read_file", "list_directory", "search_docs", "web_search"],
+    "read":  ["read_file", "list_directory", "search_docs", "web_search", "tavily_search"],
     "write": ["write_file", "edit_file", "run_command", "delete_file"],
 }
 
@@ -65,6 +65,20 @@ MOCK_TOOLS = [
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tavily_search",
+            "description": "Search the web for current information on any topic",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "the search query"},
+                },
+                "required": ["query"],
             },
         },
     },

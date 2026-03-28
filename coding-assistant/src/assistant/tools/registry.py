@@ -37,7 +37,7 @@ def load_all_tools():
 
 
 def load_rag_tool():
-    """Register the local docs search tool when its optional deps are available."""
+    """Register the local docs search tool and all MCP server tools."""
     import os
     import sys
 
@@ -49,8 +49,9 @@ def load_rag_tool():
 
     try:
         from rag_server.server import search_docs  # noqa: PLC0415
+        register_tool("search_docs", lambda query: search_docs(query, top_k=5))
     except ImportError:
-        load_all_tools()
-        return
+        pass  # RAG deps not installed; search_docs simply won't be available
 
-    register_tool("search_docs", lambda query: search_docs(query, top_k=5))
+    # Always load MCP server tools (filesystem, tavily, etc.) on top of RAG
+    load_all_tools()

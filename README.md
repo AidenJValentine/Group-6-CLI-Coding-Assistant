@@ -20,6 +20,7 @@ Senior design project. Takes natural language instructions from a developer, rea
 | Tool | Min version | Install |
 |---|---|---|
 | Python | 3.13+ | [python.org](https://python.org) |
+| Node.js | 18+ | [nodejs.org](https://nodejs.org) — required for `npx` (MCP filesystem server) |
 | uv | latest | `pip install uv` or [docs.astral.sh/uv](https://docs.astral.sh/uv) |
 | Ollama | latest | [ollama.com](https://ollama.com) — only needed for local models |
 | Git | any | [git-scm.com](https://git-scm.com) |
@@ -49,17 +50,17 @@ uv sync
 **Option B — pip + requirements.txt:**
 
 ```bash
-cd coding-assistant
-python -m venv .venv
+# From repo root
+python -m venv coding-assistant/.venv
 # Windows
-.venv\Scripts\activate
+coding-assistant\.venv\Scripts\activate
 # macOS / Linux
-source .venv/bin/activate
+source coding-assistant/.venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-`requirements.txt` is generated from `pyproject.toml` and contains all pinned transitive dependencies. Both files live in `coding-assistant/`.
+`requirements.txt` lives at the repo root and is generated from `pyproject.toml`. It contains all pinned transitive dependencies.
 
 Key packages installed either way: `langgraph`, `litellm`, `chromadb`, `sentence-transformers`, `mcp`.
 
@@ -73,31 +74,34 @@ ollama pull llama3.2
 
 Make sure Ollama is running (`ollama serve`) before starting the assistant.
 
-### 4. Set API keys (cloud providers only)
+### 4. Create a `.env` file
 
-Skip this if you're only using Ollama.
+The assistant loads API keys and MCP server config from a `.env` file in the **repo root** (`Group-6-CLI-Coding-Assistant/.env`). Create it now:
 
 ```bash
-# Anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# OpenAI
-export OPENAI_API_KEY=sk-...
-
-# Groq
-export GROQ_API_KEY=gsk_...
-
-# OpenRouter (gives access to Claude, GPT-4o, Llama, Gemini, and more)
-export OPENROUTER_API_KEY=sk-or-...
+# From repo root
+cp .env.example .env   # if an example exists, otherwise create it manually
 ```
 
-On Windows (PowerShell):
-```powershell
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
-$env:OPENROUTER_API_KEY = "sk-or-..."
+Minimal `.env` — fill in whichever keys you have:
+
+```dotenv
+# --- Cloud provider keys (add whichever you use) ---
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GROQ_API_KEY=gsk_...
+OPENROUTER_API_KEY=sk-or-...
+
+# --- MCP filesystem server (lets the agent read/write repo files) ---
+ASSISTANT_FILESYSTEM_MCP_COMMAND=npx
+ASSISTANT_FILESYSTEM_MCP_ARGS=-y @modelcontextprotocol/server-filesystem /absolute/path/to/Group-6-CLI-Coding-Assistant
 ```
 
-**No API key yet?** Run the assistant with no flags and it will prompt you to either use local Ollama or enter an OpenRouter key interactively:
+Replace the path in `ASSISTANT_FILESYSTEM_MCP_ARGS` with the absolute path to the repo root on your machine.
+
+The assistant reads this file automatically on startup — no `export` or shell sourcing needed.
+
+**No API key yet?** Run the assistant with no flags and it will prompt you interactively:
 
 ```
 No model configured. Options:
@@ -137,6 +141,20 @@ To use your own docs instead, drop `.md` or `.txt` files into `coding-assistant/
 ## Running the assistant
 
 All commands run from inside the `coding-assistant/` directory.
+
+### Quick start
+
+```bash
+cd coding-assistant
+
+# uv (recommended)
+uv run python src/assistant/main.py --agent-model ollama/llama3.2 --executor-model ollama/llama3.2
+
+# pip venv (after activating .venv)
+python src/assistant/main.py --agent-model ollama/llama3.2 --executor-model ollama/llama3.2
+```
+
+The REPL starts and shows a prompt like `[debug] > `. Type any task in plain English, or a slash command. Press `Ctrl+C` or type `/exit` to quit.
 
 ### Local model (Ollama)
 
@@ -264,9 +282,11 @@ Mode switched to build.
 
 ```
 Group-6-CLI-Coding-Assistant/
+├── .env                         # API keys + MCP config (not committed)
+├── requirements.txt             # Pinned flat list for pip install -r
 ├── SpecificationFiles/          # Architecture and module spec docs
 ├── coding-assistant/
-│   ├── pyproject.toml           # Dependencies (uv)
+│   ├── pyproject.toml           # Dependency declarations (uv / PEP 517)
 │   ├── rag_server/              # RAG pipeline
 │   │   ├── server.py            # docs_search() entry point
 │   │   ├── ingest.py            # Index builder
@@ -334,6 +354,9 @@ The raw docs directory is empty. Run step 5 of setup above.
 
 **Ollama connection refused**
 Make sure Ollama is running: `ollama serve`
+
+**`ModuleNotFoundError` after `pip install -r requirements.txt`**
+Your venv is probably not activated. Run `.venv\Scripts\activate` (Windows) or `source .venv/bin/activate` (macOS/Linux) first, then retry.
 
 **`VIRTUAL_ENV does not match project environment` warning**
 Safe to ignore — uv prints this when a system Python venv is active. uv always uses `.venv` inside `coding-assistant/`.
