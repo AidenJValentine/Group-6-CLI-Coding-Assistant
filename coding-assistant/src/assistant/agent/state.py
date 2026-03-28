@@ -1,6 +1,7 @@
-"""AgentState definition for the LangGraph-based assistant loop."""
+"""AgentState definition and initialization helpers for the LangGraph agent loop."""
 
-from typing import TypedDict
+import operator
+from typing import Annotated, Any, TypedDict
 
 
 class AgentState(TypedDict):
@@ -15,8 +16,11 @@ class AgentState(TypedDict):
     # Mode — "debug" (ReAct) or "build" (plan-and-execute)
     execution_mode: str
 
-    # Tool tracking
-    tool_history: list[dict]      # Record of every tool call and its result
+    # Tool tracking — uses operator.add reducer so parallel fan-out results accumulate
+    tool_history: Annotated[list[dict], operator.add]
+
+    # Build-mode: current step being executed (set by fan_out_plan via Send())
+    current_step: dict
 
     # Build-mode plan
     # Each entry: {"id": str, "step": str, "depends_on": list[str]}
@@ -28,3 +32,44 @@ class AgentState(TypedDict):
     # Output
     final_answer: str
     status: str                   # "running" | "completed" | "failed" | "cancelled"
+    _pending_final: str           # final answer text from agent_node before responder commits it
+
+    # Model selection — set from RuntimeConfig so nodes don't call load_provider_config()
+    agent_model: str
+    executor_model: str
+
+    # CLI / approval fields (from CLI-Interface)
+    approval_mode: str            # "confirm" | "auto"
+    pending_tool_call: dict       # tool call awaiting execution; {} when none
+    latest_events: list[dict]     # tool events from the most recent turn
+    slash_command: str            # raw slash command string if input started with /
+    exit_requested: bool          # set True by /exit to signal REPL shutdown
+    approval_handler: Any         # callable(tool_call: dict) -> bool; None in headless mode
+
+
+def make_initial_state(
+    execution_mode: str = "debug",
+    max_iterations: int = 10,
+) -> AgentState:
+    """Return a valid AgentState with safe defaults for a new session."""
+    return AgentState(
+        original_task="",
+        messages=[],
+        iteration_count=0,
+        max_iterations=max_iterations,
+        execution_mode=execution_mode,
+        tool_history=[],
+        current_step={},
+        plan=[],
+        final_answer="",
+        status="running",
+        agent_model="mock-agent",
+        executor_model="mock-executor",
+        approval_mode="confirm",
+        pending_tool_call={},
+        latest_events=[],
+        slash_command="",
+        exit_requested=False,
+        approval_handler=None,
+        _pending_final="",
+    )
