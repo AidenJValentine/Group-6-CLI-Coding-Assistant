@@ -18,13 +18,13 @@ def render_banner(config: RuntimeConfig) -> None:
 def render_tool_events(events: Iterable[dict]) -> None:
     """Display tool activity in a visually distinct block."""
     for event in events:
-        args = event.get("args", {})
         print("[tool]")
-        print(f"  name: {event.get('tool_name', 'unknown')}")
-        print(f"  args: {args}")
-        print(f"  status: {event.get('status', 'unknown')}")
+        print(f"  name: {event.get('tool') or event.get('tool_name', 'unknown')}")
+        print(f"  args: {event.get('args', {})}")
         if "result" in event:
             print(f"  result: {event['result']}")
+        if "status" in event:
+            print(f"  status: {event['status']}")
 
 
 def render_assistant_text(text: str) -> None:
@@ -41,3 +41,10 @@ def render_status(status: str) -> None:
 def render_error(message: str) -> None:
     """Render an error message distinctly."""
     print(f"[error] {message}")
+
+
+def render_result(state: dict) -> None:
+    """Print tool calls, then final answer, then status line."""
+    render_tool_events(state.get("tool_history", []))
+    render_assistant_text(state.get("final_answer", ""))
+    render_status(state.get("status", "unknown"))

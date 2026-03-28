@@ -9,6 +9,10 @@ SRC_DIR = Path(__file__).resolve().parents[1]
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+# Ensure UTF-8 output on Windows terminals that default to cp1252
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from assistant.cli.app import run_cli
 from assistant.config import RuntimeConfig
 
@@ -21,7 +25,7 @@ def parse_args() -> RuntimeConfig:
     parser.add_argument("--executor-model", default="mock-executor")
     parser.add_argument("--mode", choices=["debug", "build"], default="debug")
     parser.add_argument("--approval-mode", choices=["confirm", "auto"], default="confirm")
-    parser.add_argument("--max-iterations", type=int, default=3)
+    parser.add_argument("--max-iterations", type=int, default=10)
     args = parser.parse_args()
     return RuntimeConfig(
         provider=args.provider,

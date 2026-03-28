@@ -25,6 +25,11 @@ from assistant.agent.planner import make_plan
 from assistant.providers.litellm_client import call_llm
 from assistant.config import load_provider_config, RuntimeConfig
 from assistant.mcp.mock_client import MockMCPClient
+from assistant.tools.executor import invoke_tool
+from assistant.tools.registry import TOOL_REGISTRY, load_rag_tool
+
+# Register real tools once at import time
+load_rag_tool()
 
 
 # ---------------------------------------------------------------------------
@@ -40,8 +45,22 @@ MOCK_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "search_docs",
+            "description": "Search the documentation index for relevant information about a library or API",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "the search query"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
-            "description": "Read a file",
+            "description": "Read the contents of a file at the given path",
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
@@ -53,7 +72,7 @@ MOCK_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Write a file",
+            "description": "Write content to a file at the given path",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -107,10 +126,28 @@ def mode_classifier(state: AgentState) -> AgentState:
 
 # --- Debug subgraph (ReAct) -------------------------------------------------
 
+SYSTEM_PROMPT = """You are an autonomous coding assistant. You have access to the following tools: {tool_names}.
+
+Only call tools that exist in that list. Never invent tool names.
+When you have enough information to answer, respond with plain text — not JSON, not a dict.
+You are done when you have answered the user's question completely."""
+
+
 def agent_node(state: AgentState) -> AgentState:
     """Call the LLM (agent_model) and append the response to messages."""
+    # Early exit if already at or over the limit (guards against LangGraph queuing
+    # one extra tick after the post-increment check fires)
+    if state["iteration_count"] >= state["max_iterations"]:
+        return {
+            "status": "failed",
+            "final_answer": "Max iterations reached. Stopping.",
+        }
+
     agent_model = load_provider_config()["agent_model"]
-    result = call_llm(agent_model, state["messages"], tools=MOCK_TOOLS)
+    tool_names = ", ".join([t["function"]["name"] for t in MOCK_TOOLS])
+    system_message = {"role": "system", "content": SYSTEM_PROMPT.format(tool_names=tool_names)}
+    messages_with_system = [system_message] + state["messages"]
+    result = call_llm(agent_model, messages_with_system, tools=MOCK_TOOLS)
 
     messages = list(state["messages"]) + [
         {
@@ -153,7 +190,10 @@ def tool_executor(state: AgentState) -> AgentState:
             ]
             return {"messages": messages}
 
-    result = asyncio.run(MockMCPClient().call_tool(name, args))
+    if name in TOOL_REGISTRY:
+        result = invoke_tool(name, args)
+    else:
+        result = asyncio.run(MockMCPClient().call_tool(name, args))
 
     messages = list(state["messages"]) + [
         {"role": "tool", "content": result, "tool_call_id": tool_call_id}
@@ -226,6 +266,8 @@ def route_mode(state: AgentState) -> str:
 
 def route_agent(state: AgentState) -> str:
     """Return 'tool' if the last message has a non-empty tool_calls list, else 'done'."""
+    if state["status"] == "failed":
+        return "done"
     last = state["messages"][-1]
     if last.get("tool_calls"):
         return "tool"
