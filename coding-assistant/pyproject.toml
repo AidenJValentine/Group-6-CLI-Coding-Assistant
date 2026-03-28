@@ -14,4 +14,4 @@ dependencies = [
 ]
 
 [project.scripts]
-assistant = "assistant.main:main"
+axiom = "assistant.main:main"
