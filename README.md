@@ -37,14 +37,31 @@ cd Group-6-CLI-Coding-Assistant
 
 ### 2. Install dependencies
 
+**Option A — uv (recommended):**
+
 ```bash
 cd coding-assistant
 uv sync
 ```
 
-`uv sync` reads `pyproject.toml` and installs everything into a local `.venv`. No manual pip needed.
+`uv sync` reads `pyproject.toml`, resolves the lockfile, and installs everything into `.venv` automatically.
 
-Installed packages: `langgraph`, `litellm`, `chromadb`, `sentence-transformers`.
+**Option B — pip + requirements.txt:**
+
+```bash
+cd coding-assistant
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+`requirements.txt` is generated from `pyproject.toml` and contains all pinned transitive dependencies. Both files live in `coding-assistant/`.
+
+Key packages installed either way: `langgraph`, `litellm`, `chromadb`, `sentence-transformers`, `mcp`.
 
 ### 3. Pull a local model (Ollama only)
 
