@@ -10,7 +10,8 @@ Senior design project. Takes natural language instructions from a developer, rea
 - **Build mode (plan-and-execute):** the agent breaks the task into parallel steps, fans them out, and synthesizes results.
 - **RAG search:** the agent can search ingested documentation via `search_docs` — backed by ChromaDB + sentence-transformers.
 - **Slash commands:** `/mode debug`, `/mode build`, `/help`, `/exit` — switchable mid-session.
-- **Provider-agnostic:** swap between Ollama (local), Anthropic, OpenAI, or Groq by changing a single flag — no code changes needed.
+- **Provider-agnostic:** swap between Ollama (local), Anthropic, OpenAI, OpenRouter, or Groq by changing a single flag — no code changes needed.
+- **OpenRouter support:** access 100+ models (Claude, GPT-4o, Llama, Gemini) through a single free API key at [openrouter.ai](https://openrouter.ai).
 
 ---
 
@@ -68,11 +69,24 @@ export OPENAI_API_KEY=sk-...
 
 # Groq
 export GROQ_API_KEY=gsk_...
+
+# OpenRouter (gives access to Claude, GPT-4o, Llama, Gemini, and more)
+export OPENROUTER_API_KEY=sk-or-...
 ```
 
 On Windows (PowerShell):
 ```powershell
 $env:ANTHROPIC_API_KEY = "sk-ant-..."
+$env:OPENROUTER_API_KEY = "sk-or-..."
+```
+
+**No API key yet?** Run the assistant with no flags and it will prompt you to either use local Ollama or enter an OpenRouter key interactively:
+
+```
+No model configured. Options:
+  1. Use local Ollama (requires ollama running)
+  2. Enter OpenRouter API key (get one free at openrouter.ai)
+Choice (1/2):
 ```
 
 ### 5. Build the RAG index
@@ -137,6 +151,48 @@ uv run python src/assistant/main.py \
   --mode debug
 ```
 
+### OpenRouter (recommended for new users)
+
+OpenRouter gives you access to Claude, GPT-4o, Llama, Gemini, and others through one free API key. Get one at [openrouter.ai](https://openrouter.ai).
+
+```bash
+uv run python src/assistant/main.py \
+  --provider openrouter \
+  --agent-model openrouter/anthropic/claude-sonnet-4-6 \
+  --executor-model openrouter/anthropic/claude-sonnet-4-6 \
+  --openrouter-key sk-or-...
+```
+
+To see all supported OpenRouter model strings:
+
+```bash
+uv run python src/assistant/main.py --list-models
+```
+
+Output:
+```
+Supported OpenRouter models:
+  openrouter/anthropic/claude-sonnet-4-6
+  openrouter/openai/gpt-4o
+  openrouter/meta-llama/llama-3.1-70b-instruct
+  openrouter/google/gemini-pro
+```
+
+### No flags (interactive setup)
+
+Running with no `--agent-model` flag triggers an interactive setup prompt:
+
+```bash
+uv run python src/assistant/main.py
+```
+
+```
+No model configured. Options:
+  1. Use local Ollama (requires ollama running)
+  2. Enter OpenRouter API key (get one free at openrouter.ai)
+Choice (1/2):
+```
+
 ### All flags
 
 | Flag | Default | Description |
@@ -147,6 +203,8 @@ uv run python src/assistant/main.py \
 | `--mode` | `debug` | Starting execution mode: `debug` or `build` |
 | `--approval-mode` | `confirm` | `confirm` = prompt before write tools; `auto` = skip prompts |
 | `--max-iterations` | `10` | Max ReAct loop iterations before stopping |
+| `--openrouter-key` | `None` | OpenRouter API key (falls back to `OPENROUTER_API_KEY` env var) |
+| `--list-models` | — | Print supported OpenRouter model strings and exit |
 
 ---
 
@@ -265,3 +323,9 @@ Safe to ignore — uv prints this when a system Python venv is active. uv always
 
 **Model returns JSON instead of plain text**
 Known behavior with smaller local models (e.g. llama3.2) — the model ignores the plain-text instruction in the system prompt. Use a larger model or a cloud provider for better instruction-following.
+
+**OpenRouter `401 Unauthorized`**
+Your key is wrong or not set. Double-check with `echo $OPENROUTER_API_KEY` (or `$env:OPENROUTER_API_KEY` on PowerShell). You can also pass it directly with `--openrouter-key sk-or-...`.
+
+**`--list-models` shows nothing / command not found**
+Make sure you're running from inside `coding-assistant/` with `uv run python src/assistant/main.py --list-models`.

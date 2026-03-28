@@ -126,11 +126,14 @@ def mode_classifier(state: AgentState) -> AgentState:
 
 # --- Debug subgraph (ReAct) -------------------------------------------------
 
-SYSTEM_PROMPT = """You are an autonomous coding assistant. You have access to the following tools: {tool_names}.
+SYSTEM_PROMPT = """You are a helpful coding assistant with access to these tools: {tool_names}.
 
-Only call tools that exist in that list. Never invent tool names.
-When you have enough information to answer, respond with plain text — not JSON, not a dict.
-You are done when you have answered the user's question completely."""
+Rules:
+- Call tools to find information before answering
+- After getting tool results, write your answer as plain conversational text
+- Never output JSON, dicts, or code blocks as your final answer
+- Never invent tool names outside the list above
+- When you have enough information, just answer directly in plain English"""
 
 
 def agent_node(state: AgentState) -> AgentState:
@@ -145,20 +148,43 @@ def agent_node(state: AgentState) -> AgentState:
 
     agent_model = load_provider_config()["agent_model"]
     tool_names = ", ".join([t["function"]["name"] for t in MOCK_TOOLS])
-    system_message = {"role": "system", "content": SYSTEM_PROMPT.format(tool_names=tool_names)}
-    messages_with_system = [system_message] + state["messages"]
-    result = call_llm(agent_model, messages_with_system, tools=MOCK_TOOLS)
 
-    messages = list(state["messages"]) + [
-        {
-            "role": "assistant",
-            "content": result["text"],
-            "tool_calls": result["tool_calls"],
-        }
-    ]
+    system_message = {"role": "system", "content": SYSTEM_PROMPT.format(tool_names=tool_names)}
+
+    # On turn 1 (no prior assistant messages) inject a conversational primer so
+    # the model responds with prose rather than a structured JSON blob.
+    # On turns 2+ the accumulated tool/assistant history already anchors tone —
+    # inserting the primer would produce two consecutive assistant messages, which
+    # is invalid for strict providers like Claude.
+    has_prior_assistant = any(m.get("role") == "assistant" for m in state["messages"])
+    if not has_prior_assistant:
+        first_user = state["messages"][0] if state["messages"] else {"role": "user", "content": ""}
+        rest = state["messages"][1:]
+        messages_with_system = [
+            system_message,
+            first_user,
+            {"role": "assistant", "content": "I'll help with that. Let me search the documentation."},
+        ] + rest
+    else:
+        messages_with_system = [system_message] + state["messages"]
+
+    result = call_llm(agent_model, messages_with_system, tools=MOCK_TOOLS)
     iteration_count = state["iteration_count"] + 1
 
-    update: dict = {"messages": messages, "iteration_count": iteration_count}
+    if result["tool_calls"]:
+        # Tool-call turn: keep in history so tool_executor can read it
+        messages = list(state["messages"]) + [
+            {
+                "role": "assistant",
+                "content": result["text"],
+                "tool_calls": result["tool_calls"],
+            }
+        ]
+        update: dict = {"messages": messages, "iteration_count": iteration_count}
+    else:
+        # Final answer turn: don't append to history — stash in _pending_final
+        # to avoid re-anchoring subsequent calls to whatever format the model used
+        update = {"iteration_count": iteration_count, "_pending_final": result["text"] or ""}
 
     if iteration_count >= state["max_iterations"]:
         update["status"] = "failed"
@@ -232,16 +258,20 @@ def synthesizer(state: AgentState) -> AgentState:
 # --- Shared exit node -------------------------------------------------------
 
 def responder(state: AgentState) -> AgentState:
-    """Set final_answer from last assistant message and print to stdout."""
-    final_answer = state["final_answer"]
+    """Set final_answer and print to stdout.
 
-    if not final_answer:
-        assistant_messages = [
-            m for m in state["messages"] if m.get("role") == "assistant"
-        ]
-        if assistant_messages:
-            final_answer = assistant_messages[-1].get("content") or ""
-
+    Priority: _pending_final (set by agent_node for text-only turns) >
+              state["final_answer"] (set by max-iterations guard) >
+              last assistant message content (fallback).
+    """
+    final_answer = (
+        state.get("_pending_final")
+        or state["final_answer"]
+        or next(
+            (m.get("content") or "" for m in reversed(state["messages"]) if m.get("role") == "assistant"),
+            "",
+        )
+    )
     print(final_answer)
     return {"final_answer": final_answer, "status": "completed"}
 
@@ -265,11 +295,11 @@ def route_mode(state: AgentState) -> str:
 
 
 def route_agent(state: AgentState) -> str:
-    """Return 'tool' if the last message has a non-empty tool_calls list, else 'done'."""
+    """Return 'tool' if the last assistant message has pending tool calls, else 'done'."""
     if state["status"] == "failed":
         return "done"
-    last = state["messages"][-1]
-    if last.get("tool_calls"):
+    last = state["messages"][-1] if state["messages"] else {}
+    if last.get("role") == "assistant" and last.get("tool_calls"):
         return "tool"
     return "done"
 

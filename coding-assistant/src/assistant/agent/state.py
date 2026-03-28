@@ -32,6 +32,7 @@ class AgentState(TypedDict):
     # Output
     final_answer: str
     status: str                   # "running" | "completed" | "failed" | "cancelled"
+    _pending_final: str           # final answer text from agent_node before responder commits it
 
     # CLI / approval fields (from CLI-Interface)
     approval_mode: str            # "confirm" | "auto"
@@ -64,4 +65,5 @@ def make_initial_state(
         slash_command="",
         exit_requested=False,
         approval_handler=None,
+        _pending_final="",
     )

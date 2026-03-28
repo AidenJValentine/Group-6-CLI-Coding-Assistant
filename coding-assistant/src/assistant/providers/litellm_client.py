@@ -1,5 +1,7 @@
 """Thin wrapper around litellm.completion() returning a normalized response dict."""
 
+import os
+
 import litellm
 
 
@@ -8,6 +10,7 @@ def call_llm(
     messages: list[dict],
     tools: list[dict] | None = None,
     stream: bool = False,
+    api_key: str | None = None,
 ) -> dict:
     """Call any LiteLLM-supported model and return a normalized response.
 
@@ -19,6 +22,10 @@ def call_llm(
             "raw":           object       — raw LiteLLM ModelResponse
         }
     """
+    if model.startswith("openrouter/"):
+        key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+        os.environ["OPENROUTER_API_KEY"] = key
+
     kwargs: dict = {"model": model, "messages": messages, "stream": stream}
     if tools:
         kwargs["tools"] = tools

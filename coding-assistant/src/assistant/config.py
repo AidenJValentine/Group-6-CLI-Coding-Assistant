@@ -62,3 +62,13 @@ class RuntimeConfig:
     execution_mode: str = "debug"
     approval_mode: str = "confirm"
     max_iterations: int = 10
+    openrouter_api_key: str | None = None
+
+
+def get_openrouter_models() -> list[str]:
+    return [
+        "openrouter/anthropic/claude-sonnet-4-6",
+        "openrouter/openai/gpt-4o",
+        "openrouter/meta-llama/llama-3.1-70b-instruct",
+        "openrouter/google/gemini-pro",
+    ]
