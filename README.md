@@ -1,5 +1,11 @@
 # Group 6 — CLI Coding Assistant
 
+## Demo
+
+[Watch the demo on Loom](https://www.loom.com/share/08840865073d40f6b5736efe76a0dabd) — walks through a full session showing all three MCP servers connecting, web search + file creation, RAG-powered doc search + test generation, and mode switching.
+
+---
+
 Senior design project. Takes natural language instructions from a developer, reasons about a local codebase, and autonomously reads, edits, and executes code to complete tasks — similar to Claude Code, Codex, and OpenCode.
 
 ---
