@@ -7,6 +7,7 @@ from collections.abc import Iterable
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from assistant.config import RuntimeConfig
@@ -140,4 +141,31 @@ def render_result(state: dict, elapsed: float | None = None) -> None:
         state.get("status", "unknown"),
         state.get("iteration_count", 0),
         elapsed=elapsed,
+    )
+
+
+def render_build_plan(steps: list[dict]) -> None:
+    """Display the build mode plan header and pending steps."""
+    console.print()
+    width = 43
+    console.print(f"[bold cyan]╭─ build mode {'─' * width}╮[/bold cyan]")
+    console.print(
+        f"[bold cyan]│[/bold cyan]  plan: [cyan]{len(steps)} step{'s' if len(steps) != 1 else ''}[/cyan]"
+        f"  •  [dim]running in parallel[/dim]"
+    )
+    console.print(f"[bold cyan]╰{'─' * (width + 12)}╯[/bold cyan]")
+    console.print()
+    for step in steps:
+        label = step["step"][:65]
+        console.print(f"  [dim]◌  {step['id']:<8}  {label}[/dim]")
+    console.print()
+
+
+def render_step_complete(step_id: str, step: str, elapsed: float, result_size: int) -> None:
+    """Print a single step completion line."""
+    size_str = f"{result_size / 1024:.1f}kb" if result_size >= 1024 else f"{result_size} chars"
+    label = step[:55]
+    console.print(
+        f"  [bold green]✓[/bold green]  [dim]{step_id:<8}[/dim]  [dim]{label}[/dim]"
+        f"  [dim]({elapsed:.1f}s, {size_str})[/dim]"
     )

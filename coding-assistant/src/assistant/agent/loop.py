@@ -249,27 +249,99 @@ def tool_executor(state: AgentState) -> AgentState:
 
 def planner_node(state: AgentState) -> AgentState:
     """Call planner.py to produce state['plan'] (list of step dicts)."""
+    import os
     task = state["messages"][-1]["content"]
     plan = make_plan(task)
+
+    cwd = os.getcwd()
+    try:
+        file_list = os.listdir(cwd)
+    except OSError:
+        file_list = []
+
+    for step in plan:
+        step["context"] = {
+            "cwd": cwd,
+            "files_available": file_list,
+            "original_task": task,
+        }
+
+    from assistant.cli.renderer import render_build_plan
+    render_build_plan(plan)
     return {"plan": plan}
 
 
 def parallel_executor(state: AgentState) -> AgentState:
     """Execute a single plan step. Invoked once per Send() fan-out."""
+    import json
+    import re
+    import time as _time
+
     step = state["current_step"]
-    print(f"[build] executing: {step['step']}")
-    result = asyncio.run(MockMCPClient().call_tool("read_file", {"path": "mock"}))
+    step_description = step["step"]
+    step_id = step["id"]
+    start = _time.time()
+
+    # Ask the executor LLM to convert the step description into a concrete tool call
+    executor_model = state.get("executor_model") or load_provider_config().get("executor_model", "")
+    tool_names = [t["function"]["name"] for t in MOCK_TOOLS]
+    context = step.get("context", {})
+    cwd = context.get("cwd", "")
+    files = context.get("files_available", [])
+    original_task = context.get("original_task", "")
+    parse_prompt = (
+        f"Convert this task step into a single tool call.\n"
+        f"Available tools: {tool_names}\n"
+        f"Current working directory: {cwd}\n"
+        f"Files available in cwd: {files}\n"
+        f"Original task: {original_task}\n"
+        f"Step: {step_description}\n\n"
+        f'Reply with JSON only: {{"tool": "tool_name", "args": {{...}}}}\n'
+        f'If no tool fits, use: {{"tool": "none", "args": {{}}}}'
+    )
+
+    llm_result = call_llm(executor_model, [{"role": "user", "content": parse_prompt}])
+
+    try:
+        text = llm_result["text"]
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        tool_call = json.loads(match.group()) if match else {"tool": "none", "args": {}}
+    except Exception:
+        tool_call = {"tool": "none", "args": {}}
+
+    tool_name = tool_call.get("tool", "none")
+    tool_args = tool_call.get("args", {})
+
+    if tool_name != "none" and tool_name in TOOL_REGISTRY:
+        tool_result = invoke_tool(tool_name, tool_args)
+    elif tool_name != "none":
+        tool_result = asyncio.run(MockMCPClient().call_tool(tool_name, tool_args))
+    else:
+        tool_result = f"[completed: {step_description}]"
+
+    from assistant.cli.renderer import render_step_complete
+    render_step_complete(step_id, step_description, _time.time() - start, len(str(tool_result)))
+
     # Return delta only — operator.add reducer accumulates across parallel invocations
-    return {"tool_history": [{"step_id": step["id"], "step": step["step"], "result": result}]}
+    return {"tool_history": [{"step_id": step_id, "step": step_description, "tool": tool_name, "args": tool_args, "result": tool_result}]}
 
 
 def synthesizer(state: AgentState) -> AgentState:
-    """Collect all tool_history entries and build the final answer."""
-    lines = [
-        f"- [{entry['step_id']}] {entry['step']}: {entry['result']}"
-        for entry in state["tool_history"]
-    ]
-    final_answer = "Build results:\n" + "\n".join(lines)
+    """Collect all tool_history entries and synthesize a final answer via LLM."""
+    task = state["messages"][-1]["content"] if state["messages"] else ""
+    lines = []
+    for entry in state["tool_history"]:
+        result_preview = str(entry.get("result", ""))[:500]
+        lines.append(f"Step: {entry['step']}\nTool: {entry.get('tool','none')}\nResult: {result_preview}")
+
+    agent_model = state.get("agent_model") or load_provider_config().get("agent_model", "")
+    synthesis_prompt = (
+        f"You executed a multi-step plan for this task: {task}\n\n"
+        f"Here are the results of each step:\n\n" + "\n\n".join(lines) +
+        "\n\nWrite a concise plain-English summary of what was accomplished."
+    )
+    llm_result = call_llm(agent_model, [{"role": "user", "content": synthesis_prompt}])
+    final_answer = llm_result.get("text") or "Build completed."
     return {"final_answer": final_answer}
 
 
