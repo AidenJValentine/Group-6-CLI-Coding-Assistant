@@ -334,7 +334,7 @@ cd C:\Users\%USERNAME%\Desktop\demo
 ```
 
 ```
-axiom.bat --provider openrouter --agent-model openrouter/anthropic/claude-sonnet-4-6 --executor-model openrouter/anthropic/claude-sonnet-4-6 --approval-mode auto
+axiom --provider openrouter --agent-model openrouter/anthropic/claude-sonnet-4-6 --executor-model openrouter/anthropic/claude-sonnet-4-6 --approval-mode auto
 ```
 
 Wait for all 3 servers + banner. Then at `>`:
