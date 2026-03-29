@@ -32,6 +32,27 @@ if _ENV_FILE.exists():
                 _k, _, _v = _line.partition("=")
                 os.environ.setdefault(_k.strip(), _v.strip())
 
+# Append the current working directory to the MCP filesystem server's
+# allowed-paths list. Runs after .env is loaded but before any assistant.*
+# module is imported, so server_config.py sees the updated value.
+import os as _os, shlex as _shlex
+_cwd = _os.getcwd()
+_fs_cmd  = _os.environ.get("ASSISTANT_FILESYSTEM_MCP_COMMAND", "").strip()
+_fs_args = _os.environ.get("ASSISTANT_FILESYSTEM_MCP_ARGS", "").strip()
+# Parse existing args, stripping surrounding quotes so we can compare bare paths
+try:
+    _existing = [p.strip('"').strip("'") for p in _shlex.split(_fs_args, posix=False)] if _fs_args else []
+except ValueError:
+    _existing = [p for p in _fs_args.split() if p]
+
+if not _fs_cmd:
+    _os.environ["ASSISTANT_FILESYSTEM_MCP_COMMAND"] = "npx"
+    _os.environ["ASSISTANT_FILESYSTEM_MCP_ARGS"] = f"-y @modelcontextprotocol/server-filesystem {_cwd}"
+elif _cwd not in _existing:
+    _os.environ["ASSISTANT_FILESYSTEM_MCP_ARGS"] = f"{_fs_args} {_cwd}"
+
+del _os, _shlex, _cwd, _fs_cmd, _fs_args, _existing
+
 from assistant.cli.app import run_cli
 from assistant.config import RuntimeConfig, get_openrouter_models
 

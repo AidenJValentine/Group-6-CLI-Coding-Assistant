@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from pathlib import Path
 
 
@@ -11,7 +12,10 @@ def _project_root() -> Path:
 
 
 def _split_args(raw_args: str) -> list[str]:
-    return [part for part in raw_args.split() if part]
+    try:
+        return [p for p in shlex.split(raw_args, posix=False) if p]
+    except ValueError:
+        return [part for part in raw_args.split() if part]
 
 
 def _load_optional_server(prefix: str) -> dict | None:
@@ -36,7 +40,10 @@ def _load_rag_server() -> dict | None:
     else:
         args = [str(_project_root() / "rag_server" / "server.py")]
 
-    return {"command": command, "args": args}
+    # Always run the RAG server from the coding-assistant root so that
+    # `python -m rag_server.server` resolves the package correctly regardless
+    # of where the user launched axiom from.
+    return {"command": command, "args": args, "cwd": str(_project_root())}
 
 
 def load_mcp_servers() -> dict[str, dict]:

@@ -45,6 +45,7 @@ class MCPClient:
                 command=config["command"],
                 args=config.get("args", []),
                 env=None,  # inherit full parent environment (API keys etc.)
+                cwd=config.get("cwd"),
             )
             async with stdio_client(params, open(os.devnull, "w")) as (read, write):
                 async with ClientSession(read, write) as session:

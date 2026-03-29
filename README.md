@@ -92,12 +92,23 @@ OPENAI_API_KEY=sk-...
 GROQ_API_KEY=gsk_...
 OPENROUTER_API_KEY=sk-or-...
 
+# --- Tavily web search (optional — get a free key at tavily.com) ---
+TAVILY_API_KEY=tvly-...
+
 # --- MCP filesystem server (lets the agent read/write repo files) ---
 ASSISTANT_FILESYSTEM_MCP_COMMAND=npx
 ASSISTANT_FILESYSTEM_MCP_ARGS=-y @modelcontextprotocol/server-filesystem /absolute/path/to/Group-6-CLI-Coding-Assistant
+
+# --- MCP Tavily web search server ---
+ASSISTANT_EXTERNAL_MCP_COMMAND=npx
+ASSISTANT_EXTERNAL_MCP_ARGS=-y tavily-mcp
+
+# --- MCP RAG server (searches ingested project docs) ---
+ASSISTANT_RAG_MCP_COMMAND=/absolute/path/to/Group-6-CLI-Coding-Assistant/coding-assistant/.venv/Scripts/python.exe
+ASSISTANT_RAG_MCP_ARGS=-m rag_server.server
 ```
 
-Replace the path in `ASSISTANT_FILESYSTEM_MCP_ARGS` with the absolute path to the repo root on your machine.
+Replace paths in `ASSISTANT_FILESYSTEM_MCP_ARGS` and `ASSISTANT_RAG_MCP_COMMAND` with the absolute path to the repo root on your machine. On macOS/Linux the RAG command is `.venv/bin/python` instead of `.venv/Scripts/python.exe`.
 
 The assistant reads this file automatically on startup — no `export` or shell sourcing needed.
 
@@ -140,50 +151,60 @@ To use your own docs instead, drop `.md` or `.txt` files into `coding-assistant/
 
 ## Running the assistant
 
-All commands run from inside the `coding-assistant/` directory.
+All commands run from inside the `coding-assistant/` directory with the venv activated.
 
 ### Quick start
 
 ```bash
 cd coding-assistant
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS / Linux
 
-# uv (recommended)
-uv run python src/assistant/main.py --agent-model ollama/llama3.2 --executor-model ollama/llama3.2
-
-# pip venv (after activating .venv)
-python src/assistant/main.py --agent-model ollama/llama3.2 --executor-model ollama/llama3.2
+axiom --provider openrouter \
+  --agent-model openrouter/anthropic/claude-sonnet-4-6 \
+  --executor-model openrouter/anthropic/claude-sonnet-4-6
 ```
 
-The REPL starts and shows a prompt like `[debug] > `. Type any task in plain English, or a slash command. Press `Ctrl+C` or type `/exit` to quit.
+On startup you'll see which MCP servers connected, then the banner:
+
+```
+◆ filesystem   connected
+◆ tavily       connected
+◆ rag          connected
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                    AXIOM                                    │
+└──────────────────── autonomous coding assistant ────────────────────────────┘
+  mode=debug | provider=openrouter | model=openrouter/anthropic/claude-sonnet-4-6
+  type /help for commands
+
+ >
+```
+
+Type any task in plain English, or a slash command. Press `Ctrl+C` or type `/exit` to quit.
 
 ### Local model (Ollama)
 
 ```bash
-uv run python src/assistant/main.py \
-  --provider ollama \
+axiom --provider ollama \
   --agent-model ollama/llama3.2 \
-  --executor-model ollama/llama3.2 \
-  --mode debug
+  --executor-model ollama/llama3.2
 ```
 
 ### Anthropic (Claude)
 
 ```bash
-uv run python src/assistant/main.py \
-  --provider anthropic \
+axiom --provider anthropic \
   --agent-model anthropic/claude-sonnet-4-6 \
-  --executor-model anthropic/claude-sonnet-4-6 \
-  --mode debug
+  --executor-model anthropic/claude-sonnet-4-6
 ```
 
 ### OpenAI
 
 ```bash
-uv run python src/assistant/main.py \
-  --provider openai \
+axiom --provider openai \
   --agent-model openai/gpt-4o \
-  --executor-model openai/gpt-4o \
-  --mode debug
+  --executor-model openai/gpt-4o
 ```
 
 ### OpenRouter (recommended for new users)
@@ -191,8 +212,7 @@ uv run python src/assistant/main.py \
 OpenRouter gives you access to Claude, GPT-4o, Llama, Gemini, and others through one free API key. Get one at [openrouter.ai](https://openrouter.ai).
 
 ```bash
-uv run python src/assistant/main.py \
-  --provider openrouter \
+axiom --provider openrouter \
   --agent-model openrouter/anthropic/claude-sonnet-4-6 \
   --executor-model openrouter/anthropic/claude-sonnet-4-6 \
   --openrouter-key sk-or-...
@@ -201,7 +221,7 @@ uv run python src/assistant/main.py \
 To see all supported OpenRouter model strings:
 
 ```bash
-uv run python src/assistant/main.py --list-models
+axiom --list-models
 ```
 
 Output:
@@ -218,7 +238,7 @@ Supported OpenRouter models:
 Running with no `--agent-model` flag triggers an interactive setup prompt:
 
 ```bash
-uv run python src/assistant/main.py
+axiom
 ```
 
 ```
@@ -226,6 +246,17 @@ No model configured. Options:
   1. Use local Ollama (requires ollama running)
   2. Enter OpenRouter API key (get one free at openrouter.ai)
 Choice (1/2):
+```
+
+### Auto-approval mode
+
+Pass `--approval-mode auto` to skip confirmation prompts for write operations (useful for demos and scripted runs):
+
+```bash
+axiom --provider openrouter \
+  --agent-model openrouter/anthropic/claude-sonnet-4-6 \
+  --executor-model openrouter/anthropic/claude-sonnet-4-6 \
+  --approval-mode auto
 ```
 
 ### All flags
@@ -261,19 +292,76 @@ Type `exit` or `quit` (without `/`) to also quit.
 ## Example session
 
 ```
-[debug] > search the docs for how the agent loop works
-[tool]
-  name: search_docs
-  args: {'query': 'agent loop'}
-  result: {'query': 'agent loop', 'results': [...]}
-assistant> The agent loop is implemented as a LangGraph state machine ...
-[status] completed
+ > search the docs for how the agent loop works
 
-[debug] > /mode build
+  ◌ thinking...
+⚡ search_docs  "how the agent loop works"
+  ✓ done  (2,341 chars, 0.4s)
+
+  ◌ thinking...
+╭─ axiom ───────────────────────────────────────────────────────────────────╮
+│ The agent loop is implemented as a LangGraph state machine with two        │
+│ subgraphs: debug mode (ReAct) and build mode (plan-and-execute)...         │
+╰────────────────────────────────────────────────────────────────────────────╯
+● completed  2 iterations  5.1s
+
+ > /mode build
 Mode switched to build.
 
-[build] > read all the spec files and summarize the architecture
-...
+ > create a folder called output and write a summary.md file inside it
+
+  ◌ thinking...
+📁 create_directory   output/
+📝 write_file         output/summary.md  (0.8kb)
+╭─ axiom ───────────────────────────────────────────────────────────────────╮
+│ Done! Created output/summary.md with a summary of the architecture.        │
+╰────────────────────────────────────────────────────────────────────────────╯
+● completed  2 iterations  8.3s
+
+ > /exit
+Goodbye!
+```
+
+---
+
+## Demo script
+
+Run this from a fresh folder to show all three MCP servers, two non-trivial tasks, and mode switching. Assumes venv is already activated.
+
+```
+mkdir C:\Users\%USERNAME%\Desktop\demo
+cd C:\Users\%USERNAME%\Desktop\demo
+```
+
+```
+axiom.bat --provider openrouter --agent-model openrouter/anthropic/claude-sonnet-4-6 --executor-model openrouter/anthropic/claude-sonnet-4-6 --approval-mode auto
+```
+
+Wait for all 3 servers + banner. Then at `>`:
+
+**Task 1 — web search + file creation:**
+```
+search the web for Python best practices for error handling in a calculator, then create a folder called calculator_app and write a Python file called calculator.py inside it with add, subtract, multiply, and divide functions that implement those best practices
+```
+
+**Task 2 — RAG search + test generation:**
+```
+search the docs to understand how the agent loop works in this project, then read calculator_app/calculator.py and write a test file called test_calculator.py in the same folder that tests every function
+```
+
+**Switch to build mode:**
+```
+/mode build
+```
+
+**Task 3 — build mode summarization:**
+```
+read calculator_app/calculator.py and summarize what it does and what error handling patterns it uses
+```
+
+**Exit:**
+```
+/exit
 ```
 
 ---
@@ -332,7 +420,7 @@ Group-6-CLI-Coding-Assistant/
 
 To point the RAG server at a different directory entirely, set `RAG_DOCS_DIR` before running:
 ```bash
-RAG_DOCS_DIR=/path/to/my/docs uv run python src/assistant/main.py ...
+RAG_DOCS_DIR=/path/to/my/docs axiom ...
 ```
 
 ---
@@ -368,4 +456,4 @@ Known behavior with smaller local models (e.g. llama3.2) — the model ignores t
 Your key is wrong or not set. Double-check with `echo $OPENROUTER_API_KEY` (or `$env:OPENROUTER_API_KEY` on PowerShell). You can also pass it directly with `--openrouter-key sk-or-...`.
 
 **`--list-models` shows nothing / command not found**
-Make sure you're running from inside `coding-assistant/` with `uv run python src/assistant/main.py --list-models`.
+Make sure you're inside `coding-assistant/` with the venv activated, then run `axiom --list-models`.
