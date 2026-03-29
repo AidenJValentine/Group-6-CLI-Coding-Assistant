@@ -179,7 +179,10 @@ def agent_node(state: AgentState) -> AgentState:
 
     messages_with_system = [system_message] + state["messages"]
 
+    from assistant.cli.renderer import render_thinking, render_clear_thinking
+    render_thinking()
     result = call_llm(agent_model, messages_with_system, tools=MOCK_TOOLS)
+    render_clear_thinking()
     iteration_count = state["iteration_count"] + 1
 
     if result["tool_calls"]:
@@ -226,10 +229,15 @@ def tool_executor(state: AgentState) -> AgentState:
             ]
             return {"messages": messages}
 
+    from assistant.cli.renderer import render_tool_call, render_tool_result
+    start_time = render_tool_call(name, args)
+
     if name in TOOL_REGISTRY:
         result = invoke_tool(name, args)
     else:
         result = asyncio.run(MockMCPClient().call_tool(name, args))
+
+    render_tool_result(name, result, start_time)
 
     messages = list(state["messages"]) + [
         {"role": "tool", "content": result, "tool_call_id": tool_call_id}

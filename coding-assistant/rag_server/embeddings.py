@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+import os
+
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 _MODEL = None
+
+# Suppress verbose output that deadlocks MCP stdio pipes
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 
 
 def _load_model():
@@ -19,7 +26,7 @@ def _load_model():
                 "Install it before running ingestion or retrieval."
             ) from exc
 
-        _MODEL = SentenceTransformer(MODEL_NAME)
+        _MODEL = SentenceTransformer(MODEL_NAME, local_files_only=False)
 
     return _MODEL
 
@@ -27,7 +34,7 @@ def _load_model():
 def get_embedding(text: str) -> list[float]:
     """Return an embedding for one text string."""
     model = _load_model()
-    embedding = model.encode([text], convert_to_numpy=True, normalize_embeddings=True)
+    embedding = model.encode([text], convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
     return embedding[0].tolist()
 
 
@@ -37,5 +44,5 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
         return []
 
     model = _load_model()
-    embeddings = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+    embeddings = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
     return embeddings.tolist()

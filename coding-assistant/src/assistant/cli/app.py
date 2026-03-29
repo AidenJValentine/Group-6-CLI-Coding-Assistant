@@ -1,15 +1,27 @@
 """CLI application loop for reading input and printing responses."""
 
+import logging
 import os
+import time
+
+import litellm
 
 from assistant.agent.loop import run_agent
 from assistant.cli.renderer import (
     console,
     render_banner,
     render_error,
+    render_mcp_servers,
     render_result,
 )
 from assistant.config import RuntimeConfig, get_openrouter_models
+
+# Suppress LiteLLM and httpx verbose output
+litellm.suppress_debug_info = True
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 _MOCK_MODELS = {"mock-agent", "mock-executor", ""}
 
@@ -87,9 +99,18 @@ def _prompt_for_tavily() -> None:
         console.print("[dim]  Web search disabled.[/dim]")
 
 
+def _show_mcp_servers() -> None:
+    """Print connected MCP server status before the banner."""
+    from assistant.mcp.server_config import MCP_SERVERS
+    display = {"filesystem": "filesystem", "external": "tavily", "rag": "rag"}
+    connected = [display.get(k, k) for k in MCP_SERVERS]
+    render_mcp_servers(connected)
+
+
 def run_cli(config: RuntimeConfig) -> None:
     """Run the assistant REPL."""
     _prompt_for_model(config)
+    _show_mcp_servers()
     render_banner(config)
 
     while True:
@@ -109,12 +130,14 @@ def run_cli(config: RuntimeConfig) -> None:
             break
 
         try:
+            start = time.time()
             result = run_agent(normalized_input, config)
+            elapsed = time.time() - start
         except Exception as exc:  # pragma: no cover - defensive CLI guard
             render_error(str(exc))
             continue
 
-        render_result(result)
+        render_result(result, elapsed=elapsed)
 
         if result.get("exit_requested"):
             break

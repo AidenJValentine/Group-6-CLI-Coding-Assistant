@@ -28,6 +28,9 @@ def load_all_tools():
     tools = MCP.list_tools()
 
     for tool_name in tools:
+        if tool_name in TOOL_REGISTRY:
+            continue  # don't overwrite in-process tools (e.g. search_docs)
+
         def make_tool(name):
             def tool_fn(**kwargs):
                 return MCP.invoke_tool(name, kwargs)

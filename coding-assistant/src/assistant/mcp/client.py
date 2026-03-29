@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 from assistant.mcp.adapters import normalize_tool_metadata, normalize_tool_result
@@ -45,7 +46,7 @@ class MCPClient:
                 args=config.get("args", []),
                 env=None,  # inherit full parent environment (API keys etc.)
             )
-            async with stdio_client(params) as (read, write):
+            async with stdio_client(params, open(os.devnull, "w")) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     discovered = await session.list_tools()
@@ -88,7 +89,7 @@ class MCPClient:
                 args=config.get("args", []),
                 env=None,
             )
-            async with stdio_client(params) as (read, write):
+            async with stdio_client(params, open(os.devnull, "w")) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.call_tool(name, arguments)
