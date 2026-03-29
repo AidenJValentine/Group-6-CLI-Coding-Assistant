@@ -326,15 +326,33 @@ Goodbye!
 
 ## Demo script
 
-Run this from a fresh folder to show all three MCP servers, two non-trivial tasks, and mode switching. Assumes venv is already activated.
+Run this from any folder — `axiom.bat` works from wherever you are as long as the repo root is on your PATH.
+
+### 1. Add repo to PATH (PowerShell)
+
+**Temporary (current session only):**
+```powershell
+$env:PATH += ";C:\path\to\Group-6-CLI-Coding-Assistant"
+```
+
+**Permanent (survives terminal restarts):**
+```powershell
+[Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";C:\path\to\Group-6-CLI-Coding-Assistant", "User")
+```
+Then restart your terminal.
+
+### 2. Navigate to your demo folder
 
 ```
-mkdir C:\Users\%USERNAME%\Desktop\demo
-cd C:\Users\%USERNAME%\Desktop\demo
+cd C:\Users\%USERNAME%\Desktop\test1
 ```
 
+(Any folder works — the agent will have access to whatever directory you're in.)
+
+### 3. Launch axiom
+
 ```
-axiom --provider openrouter --agent-model openrouter/anthropic/claude-sonnet-4-6 --executor-model openrouter/anthropic/claude-sonnet-4-6 --approval-mode auto
+axiom.bat --provider openrouter --agent-model openrouter/anthropic/claude-sonnet-4-6 --executor-model openrouter/anthropic/claude-sonnet-4-6 --approval-mode auto
 ```
 
 Wait for all 3 servers + banner. Then at `>`:
